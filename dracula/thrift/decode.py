@@ -40,10 +40,11 @@ class ParseData(object):
 
 class Decoder(object):
     """解析thrift二进制数据"""
-    def __init__(self, service, handler, strict=True):
+    def __init__(self, service, handler, strict=True, decode_response=True):
         self.service = service
         self.handler = handler
         self.strict = strict
+        self.decode_response = decode_response
 
         self.current_state = TState.S_VERSION
         self.latest_result = None
@@ -74,6 +75,7 @@ class Decoder(object):
              data (string): 待解析数据
         """
         self._buf = StringIO(self._left + data)
+        result = None
 
         while True:
             if self.error_code != TError.NO_ERROR:
@@ -137,11 +139,48 @@ class Decoder(object):
                     self.parse_data.method_result = \
                         getattr(self.service, self.parse_data.method_name + "_result")()
                     self.current_state = TState.S_READ_FIELD_TYPE
+                    self._process_stack.append((TState.S_READ_FIELD_TYPE,
+                                                self.parse_data.method_args, -1))
 
-            # todo
+            elif self.current_state == TState.S_READ_FIELD_TYPE:
+                read_data = self.read(4)
+                if not read_data:
+                    break
+                self.latest_result = unpack_i8(read_data)
+                if self.latest_result == TType.STOP:
+                    top = self._process_stack.pop()
+                    if self._process_stack:
+                        self.current_state = self._process_stack[-1][0]
+                    else:
+                        result = top[1]
+                        self.current_state = TState.S_PARSE_DONE
+                else:
+                    self.current_state = TState.S_READ_FIELD_ID
+
+            elif self.current_state == TState.S_READ_FIELD_ID:
+                read_data = self.read(2)
+                if not read_data:
+                    break
+                self.latest_result = (self.latest_result, unpack_i16(read_data))
+                f_type, fid = self.latest_result
+                obj = self._process_stack[-1][1]
+                if fid not in obj.thrift_spec:
+                    pass
+                    #todo skip(f_type)
+                else:
+                    if len(obj.thrift_spec[fid]) == 3:
+                        sf_type, f_name, f_req = obj.thrift_spec[fid]
+                        f_container_spec = None
+                    else:
+                        sf_type, f_name, f_container_spec, f_req = obj.thrift_spec[fid]
+
+                    #todo read_val(f_type, f_container_spec,self.decode_response)
+                    #todo setattr(obj, f_name, ..)
 
             elif self.current_state == TState.S_PARSE_DONE:
                 break
 
             else:
                 self.error_code = TError.INTERNAL_ERROR
+
+        return result
