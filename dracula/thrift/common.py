@@ -33,6 +33,14 @@ class TType(object):
     UTF16 = 17
 
 
+BASIC_TYPE = (TType.BOOL,
+              TType.BYTE,
+              TType.I16,
+              TType.I32,
+              TType.I64,
+              TType.DOUBLE,)
+
+
 class TState(object):
     S_VERSION = 0                # 读取版本号
     S_METHOD_SIZE = 1            # S_VERSION读取结果小于0 读取方法名字长度

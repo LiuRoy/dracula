@@ -7,6 +7,7 @@ from .common import (
     TType,
     TState,
     TError,
+    BASIC_TYPE,
 )
 
 
@@ -161,12 +162,21 @@ class Decoder(object):
                 read_data = self.read(2)
                 if not read_data:
                     break
-                self.latest_result = (self.latest_result, unpack_i16(read_data))
-                f_type, fid = self.latest_result
+                f_type, fid = self.latest_result, unpack_i16(read_data)
                 obj = self._process_stack[-1][1]
                 if fid not in obj.thrift_spec:
-                    pass
-                    #todo skip(f_type)
+                    if f_type in BASIC_TYPE:
+                        self.current_state = TState.S_SKIP_BASIC
+                    elif f_type == TType.STRING:
+                        self.current_state = TState.S_SKIP_STING_SIZE
+                    elif f_type in (TType.LIST, TType.SET):
+                        self.current_state = TState.S_SKIP_LIST_TYPE
+                    elif f_type == TType.MAP:
+                        self.current_state = TState.S_SKIP_MAP_KEY_TYPE
+                    elif f_type == TType.STRUCT:
+                        self.current_state = TState.S_SKIP_FIELD_TYPE
+                    else:
+                        self.error_code = TError.INTERNAL_ERROR
                 else:
                     if len(obj.thrift_spec[fid]) == 3:
                         sf_type, f_name, f_req = obj.thrift_spec[fid]
@@ -174,7 +184,7 @@ class Decoder(object):
                     else:
                         sf_type, f_name, f_container_spec, f_req = obj.thrift_spec[fid]
 
-                    #todo read_val(f_type, f_container_spec,self.decode_response)
+                    #todo read_val(f_type, f_container_spec)
                     #todo setattr(obj, f_name, ..)
 
             elif self.current_state == TState.S_PARSE_DONE:
