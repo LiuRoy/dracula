@@ -49,17 +49,6 @@ class TState(object):
     S_METHOD_TYPE = 4            # S_METHOD_NAME2后读取方法类型
     S_SEQUENCE_ID = 5            # S_METHOD_NAME S_METHOD_TYPE后读取序列号
 
-    S_SKIP_BASIC = 6             # 跳过基础类型
-    S_SKIP_STING_SIZE = 7        # 跳过字符串长度
-    S_SKIP_STRING = 8            # 跳过字符串
-    S_SKIP_LIST_TYPE = 9         # 跳过list类型
-    S_SKIP_LIST_SIZE = 10        # 跳过list长度
-    S_SKIP_MAP_KEY_TYPE = 11     # 跳过map key类型
-    S_SKIP_MAP_VALUE_TYPE = 12   # 跳过map value类型
-    S_SKIP_MAP_SIZE = 13         # 跳过map长度
-    S_SKIP_FIELD_TYPE = 14       # 跳过field类型
-    S_SKIP_FIELD_ID = 15         # 跳过field id
-
     S_READ_BASIC = 18            # 读取基础类型
     S_READ_STRING_SIZE = 19      # 读取字符串长度
     S_READ_STRING = 20           # 读取字符串
@@ -81,4 +70,7 @@ class TError(object):
     BAD_VERSION = 2
     NO_PROTOCOL = 3
 
-    UNKNOWN_METHOD = 4
+    INVALID_FIELD_ID = 4
+    INVALID_FIELD_TYPE = 5
+
+    UNKNOWN_METHOD = 6
