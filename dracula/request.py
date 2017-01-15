@@ -25,9 +25,15 @@ class Request(object):
         self.loop = loop
 
         self.io_watcher = pyev.Io(
-            self.socket, pyev.EV_READ, self.loop, self.on_read)
+            self.socket, pyev.EV_READ, self.loop, self.handle)
         self.decoder = Decoder(service, handler)
         self.read_state = None
+
+    def handle(self, watcher, revents):
+        if revents & pyev.EV_READ:
+            self.on_read(watcher, revents)
+        else:
+            self.on_write(watcher, revents)
 
     def on_read(self, watcher, revents):
         """读取数据"""
@@ -50,6 +56,7 @@ class Request(object):
             self.read_state = ReadState.done
 
         if self.read_state == ReadState.aborted:
+            # todo 发送具体结果
             self.close_connection()
         elif self.read_state == ReadState.done:
             watcher.stop()
@@ -60,7 +67,7 @@ class Request(object):
         """写入数据"""
         #todo 写入thrift数据
         try:
-            sent = self.socket.send('aaaaa')
+            sent = self.socket.send('aaaaa\n')
         except socket.error as err:
             if err.args[0] not in NOT_BLOCKING:
                 self.close_connection()
