@@ -8,6 +8,7 @@ from .common import (
     TState,
     TError,
     BASIC_TYPE,
+    ParseData,
 )
 
 
@@ -31,16 +32,8 @@ def unpack_double(buf):
     return struct.unpack("!d", buf)[0]
 
 
-class ParseData(object):
-    """thrift解析数据"""
-    sequence_id = 0
-    method_name = None
-    method_args = None
-    method_result = None
-
-
 class Decoder(object):
-    """解析thrift二进制数据"""
+    """thrift解码"""
     def __init__(self, service, handler, strict=True, decode_response=True):
         self.service = service
         self.handler = handler

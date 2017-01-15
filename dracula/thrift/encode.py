@@ -1,6 +1,7 @@
 # -*- coding=utf8 -*-
-""""""
+"""thrift编码"""
 import struct
+from cStringIO import StringIO
 from .common import (
     VERSION_1,
     TType,
@@ -31,102 +32,111 @@ def pack_string(string):
     return struct.pack("!i%ds" % len(string), len(string), string)
 
 
-def write_message_begin(outbuf, name, ttype, seqid, strict=True):
-    if strict:
-        outbuf.write(pack_i32(VERSION_1 | ttype))
-        outbuf.write(pack_string(name.encode('utf-8')))
-    else:
-        outbuf.write(pack_string(name.encode('utf-8')))
-        outbuf.write(pack_i8(ttype))
+class Encoder(object):
+    """thrift编码"""
+    def __init__(self, obj, parse_data, strict=True):
+        self.obj = obj
+        self.parse_data = parse_data
+        self.strict = strict
+        self.buf = StringIO()
 
-    outbuf.write(pack_i32(seqid))
-
-
-def write_field_begin(outbuf, ttype, fid):
-    outbuf.write(pack_i8(ttype) + pack_i16(fid))
-
-
-def write_field_stop(outbuf):
-    outbuf.write(pack_i8(TType.STOP))
-
-
-def write_list_begin(outbuf, etype, size):
-    outbuf.write(pack_i8(etype) + pack_i32(size))
-
-
-def write_map_begin(outbuf, ktype, vtype, size):
-    outbuf.write(pack_i8(ktype) + pack_i8(vtype) + pack_i32(size))
-
-
-def write_val(outbuf, ttype, val, spec=None):
-    if ttype == TType.BOOL:
-        if val:
-            outbuf.write(pack_i8(1))
+    def encode_obj(self, ttype):
+        """编码数据
+        
+        Args:
+            ttype (int): 编码数据类型
+        """
+        if self.strict:
+            self.buf.write(pack_i32(VERSION_1 | ttype))
+            self.buf.write(pack_string(self.parse_data.method_name.encode('utf-8')))
         else:
-            outbuf.write(pack_i8(0))
+            self.buf.write(pack_string(self.parse_data.method_name.encode('utf-8')))
+            self.buf.write(pack_i8(ttype))
 
-    elif ttype == TType.BYTE:
-        outbuf.write(pack_i8(val))
+        self.buf.write(pack_i32(self.parse_data.sequence_id))
+        self.encode_val(TType.STRUCT, self.obj)
 
-    elif ttype == TType.I16:
-        outbuf.write(pack_i16(val))
+    def encode_field_begin(self, ttype, fid):
+        self.buf.write(pack_i8(ttype) + pack_i16(fid))
 
-    elif ttype == TType.I32:
-        outbuf.write(pack_i32(val))
+    def encode_field_stop(self):
+        self.buf.write(pack_i8(TType.STOP))
 
-    elif ttype == TType.I64:
-        outbuf.write(pack_i64(val))
+    def encode_list_begin(self, etype, size):
+        self.buf.write(pack_i8(etype) + pack_i32(size))
 
-    elif ttype == TType.DOUBLE:
-        outbuf.write(pack_double(val))
+    def encode_map_begin(self, ktype, vtype, size):
+        self.buf.write(pack_i8(ktype) + pack_i8(vtype) + pack_i32(size))
 
-    elif ttype == TType.STRING:
-        if not isinstance(val, bytes):
-            val = val.encode('utf-8')
-        outbuf.write(pack_string(val))
-
-    elif ttype == TType.SET or ttype == TType.LIST:
-        if isinstance(spec, tuple):
-            e_type, t_spec = spec[0], spec[1]
-        else:
-            e_type, t_spec = spec, None
-
-        val_len = len(val)
-        write_list_begin(outbuf, e_type, val_len)
-        for e_val in val:
-            write_val(outbuf, e_type, e_val, t_spec)
-
-    elif ttype == TType.MAP:
-        if isinstance(spec[0], int):
-            k_type = spec[0]
-            k_spec = None
-        else:
-            k_type, k_spec = spec[0]
-
-        if isinstance(spec[1], int):
-            v_type = spec[1]
-            v_spec = None
-        else:
-            v_type, v_spec = spec[1]
-
-        write_map_begin(outbuf, k_type, v_type, len(val))
-        for k in iter(val):
-            write_val(outbuf, k_type, k, k_spec)
-            write_val(outbuf, v_type, val[k], v_spec)
-
-    elif ttype == TType.STRUCT:
-        for fid in iter(val.thrift_spec):
-            f_spec = val.thrift_spec[fid]
-            if len(f_spec) == 3:
-                f_type, f_name, f_req = f_spec
-                f_container_spec = None
+    def encode_val(self, ttype, val, spec=None):
+        if ttype == TType.BOOL:
+            if val:
+                self.buf.write(pack_i8(1))
             else:
-                f_type, f_name, f_container_spec, f_req = f_spec
-
-            v = getattr(val, f_name)
-            if v is None:
-                continue
-
-            write_field_begin(outbuf, f_type, fid)
-            write_val(outbuf, f_type, v, f_container_spec)
-        write_field_stop(outbuf)
+                self.buf.write(pack_i8(0))
+    
+        elif ttype == TType.BYTE:
+            self.buf.write(pack_i8(val))
+    
+        elif ttype == TType.I16:
+            self.buf.write(pack_i16(val))
+    
+        elif ttype == TType.I32:
+            self.buf.write(pack_i32(val))
+    
+        elif ttype == TType.I64:
+            self.buf.write(pack_i64(val))
+    
+        elif ttype == TType.DOUBLE:
+            self.buf.write(pack_double(val))
+    
+        elif ttype == TType.STRING:
+            if not isinstance(val, bytes):
+                val = val.encode('utf-8')
+            self.buf.write(pack_string(val))
+    
+        elif ttype == TType.SET or ttype == TType.LIST:
+            if isinstance(spec, tuple):
+                e_type, t_spec = spec[0], spec[1]
+            else:
+                e_type, t_spec = spec, None
+    
+            val_len = len(val)
+            self.encode_list_begin(e_type, val_len)
+            for e_val in val:
+                self.encode_val(e_type, e_val, t_spec)
+    
+        elif ttype == TType.MAP:
+            if isinstance(spec[0], int):
+                k_type = spec[0]
+                k_spec = None
+            else:
+                k_type, k_spec = spec[0]
+    
+            if isinstance(spec[1], int):
+                v_type = spec[1]
+                v_spec = None
+            else:
+                v_type, v_spec = spec[1]
+    
+            self.encode_map_begin(k_type, v_type, len(val))
+            for k in iter(val):
+                self.encode_val(k_type, k, k_spec)
+                self.encode_val(v_type, val[k], v_spec)
+    
+        elif ttype == TType.STRUCT:
+            for fid in iter(val.thrift_spec):
+                f_spec = val.thrift_spec[fid]
+                if len(f_spec) == 3:
+                    f_type, f_name, f_req = f_spec
+                    f_container_spec = None
+                else:
+                    f_type, f_name, f_container_spec, f_req = f_spec
+    
+                v = getattr(val, f_name)
+                if v is None:
+                    continue
+    
+                self.encode_field_begin(f_type, fid)
+                self.encode_val(f_type, v, f_container_spec)
+            self.encode_field_stop()

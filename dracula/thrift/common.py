@@ -69,7 +69,14 @@ class TError(object):
 
     BAD_VERSION = 2
     NO_PROTOCOL = 3
-
     SKIP_ERROR = 4
 
     UNKNOWN_METHOD = 20
+
+
+class ParseData(object):
+    """thrift解析数据"""
+    sequence_id = 0
+    method_name = None
+    method_args = None
+    method_result = None
