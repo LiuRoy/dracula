@@ -6,6 +6,12 @@ import pyev
 from .const import (
     READ_BUFFER_SIZE,
     NOT_BLOCKING,
+    ReadState,
+)
+from .thrift import (
+    TError,
+    Decoder,
+    Encoder,
 )
 
 
@@ -20,11 +26,51 @@ class Request(object):
 
         self.io_watcher = pyev.Io(
             self.socket, pyev.EV_READ, self.loop, self.on_read)
+        self.decoder = Decoder(service, handler)
+        self.read_state = None
 
     def on_read(self, watcher, revents):
         """读取数据"""
         try:
-            buf = self.socket.read(READ_BUFFER_SIZE)
-            print buf
+            buf = self.socket.recv(READ_BUFFER_SIZE)
         except socket.error as err:
-            pass
+            if err.args[0] in NOT_BLOCKING:
+                self.read_state = ReadState.not_done
+            else:
+                self.read_state = ReadState.aborted
+        else:
+            # result = self.decoder.parse(buf)
+            # if self.decoder.error_code != TError.NO_ERROR:
+            #     self.read_state = ReadState.done
+            # elif result is None:
+            #     self.read_state = ReadState.not_done
+            # else:
+            #     self.read_state = ReadState.done
+            #     # todo 调用thrift生成结果
+            self.read_state = ReadState.done
+
+        if self.read_state == ReadState.aborted:
+            self.close_connection()
+        elif self.read_state == ReadState.done:
+            watcher.stop()
+            watcher.set(self.socket, pyev.EV_WRITE)
+            watcher.start()
+
+    def on_write(self, watcher, revents):
+        """写入数据"""
+        #todo 写入thrift数据
+        try:
+            sent = self.socket.send('aaaaa')
+        except socket.error as err:
+            if err.args[0] not in NOT_BLOCKING:
+                self.close_connection()
+        else:
+            # todo发送完毕后keep alive
+            watcher.stop()
+            watcher.set(self.socket, pyev.EV_READ)
+            watcher.start()
+
+    def close_connection(self):
+        """关闭socket"""
+        self.loop.stop(pyev.EVBREAK_ALL)
+        self.socket.close()
