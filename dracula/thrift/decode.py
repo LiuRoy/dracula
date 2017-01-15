@@ -69,6 +69,56 @@ class Decoder(object):
             return None
         return result
 
+    def read_basic(self, f_type):
+        """读取基本类型数据
+
+        Args:
+            f_type (int): 字段类型
+        """
+        if f_type == TType.BOOL:
+            read_data = self.read(1)
+            if read_data:
+                return bool(unpack_i8(read_data))
+        elif f_type == TType.BYTE:
+            read_data = self.read(1)
+            if read_data:
+                return unpack_i8(read_data)
+        elif f_type == TType.I16:
+            read_data = self.read(2)
+            if read_data:
+                return unpack_i16(read_data)
+        elif f_type == TType.I32:
+            read_data = self.read(4)
+            if read_data:
+                return unpack_i32(read_data)
+        elif f_type == TType.I64:
+            read_data = self.read(8)
+            if read_data:
+                return unpack_i64(read_data)
+        elif f_type == TType.DOUBLE:
+            read_data = self.read(8)
+            if read_data:
+                return unpack_double(read_data)
+
+    def next_state(self, f_type):
+        """根据当前类型决定下一状态
+
+        Args:
+            f_type (int): 字段类型
+        """
+        if f_type in BASIC_TYPE:
+            self.current_state = TState.S_READ_BASIC
+        elif f_type == TType.STRING:
+            self.current_state = TState.S_READ_STRING_SIZE
+        elif f_type in (TType.LIST, TType.SET):
+            self.current_state = TState.S_READ_LIST_TYPE
+        elif f_type == TType.MAP:
+            self.current_state = TState.S_READ_MAP_KEY_TYPE
+        elif f_type == TType.STRUCT:
+            self.current_state = TState.S_READ_FIELD_TYPE
+        else:
+            self.error_code = TError.INTERNAL_ERROR
+
     def parse(self, data):
         """解析二级制数据
 
@@ -141,7 +191,8 @@ class Decoder(object):
                         getattr(self.service, self.parse_data.method_name + "_result")()
                     self.current_state = TState.S_READ_FIELD_TYPE
                     self._process_stack.append((TState.S_READ_FIELD_TYPE,
-                                                self.parse_data.method_args, -1))
+                                                self.parse_data.method_args,
+                                                -1, None))
 
             elif self.current_state == TState.S_READ_FIELD_TYPE:
                 read_data = self.read(4)
@@ -165,7 +216,7 @@ class Decoder(object):
                 f_type, fid = self.latest_result, unpack_i16(read_data)
                 obj = self._process_stack[-1][1]
                 if fid not in obj.thrift_spec:
-                    self.error_code = TError.INVALID_FIELD_ID
+                    self.error_code = TError.SKIP_ERROR
                 else:
                     if len(obj.thrift_spec[fid]) == 3:
                         sf_type, f_name, f_req = obj.thrift_spec[fid]
@@ -174,11 +225,115 @@ class Decoder(object):
                         sf_type, f_name, f_container_spec, f_req = obj.thrift_spec[fid]
 
                     if sf_type != f_type:
-                        self.error_code = TError.INVALID_FIELD_TYPE
+                        self.error_code = TError.SKIP_ERROR
                     else:
-                        #todo read_val(f_type, f_container_spec)
-                        #todo setattr(obj, f_name, ..)
+                        self._process_stack[-1][3] = (
+                            f_name, f_container_spec, f_type)
+                        self.next_state(f_type)
+
+            elif self.current_state == TState.S_READ_BASIC:
+                _, _, f_type = self._process_stack[-1][3]
+                read_data = self.read_basic(f_type)
+                if not read_data:
+                    break
+                stack_top = self._process_stack[-1][0]
+                if stack_top == TState.S_READ_LIST_TYPE:
+                    pass
+                elif stack_top == TState.S_READ_MAP_KEY_TYPE:
+                    pass
+
+                # todo 回溯处理栈
+                back_result = None
+
+                setattr(self._process_stack[-1][1],
+                        self._process_stack[-1][3][2],
+                        back_result)
+                self.current_state = self._process_stack[1][0]
+
+            elif self.current_state == TState.S_READ_STRING_SIZE:
+                read_data = self.read(4)
+                if not read_data:
+                    break
+                self.latest_result = unpack_i32(read_data)
+                self.current_state = TState.S_READ_STRING
+
+            elif self.current_state == TState.S_READ_STRING:
+                read_data = self.read(self.latest_result)
+                if not read_data:
+                    break
+
+                if self.decode_response:
+                    try:
+                        read_data = read_data.decode('utf-8')
+                    except UnicodeDecodeError:
                         pass
+
+                # todo 参考TState.S_READ_BASIC
+
+            elif self.current_state == TState.S_READ_LIST_TYPE:
+                read_data = self.read(1)
+                if not read_data:
+                    break
+                self.latest_result = unpack_i8(read_data)
+                self.current_state = TState.S_READ_LIST_SIZE
+
+            elif self.current_state == TState.S_READ_LIST_SIZE:
+                read_data = self.read(4)
+                if not read_data:
+                    break
+                r_type, size = self.latest_result, unpack_i32(read_data)
+                spec = self._process_stack[-1][3][1]
+                if isinstance(spec, tuple):
+                    v_type, v_spec = spec[0], spec[1]
+                else:
+                    v_type, v_spec = spec, None
+
+                if r_type != v_type:
+                    self.error_code = TError.SKIP_ERROR
+                else:
+                    self._process_stack.append((TState.S_READ_LIST_TYPE, [],
+                                                size, (None, v_spec, v_type)))
+                    self.next_state(v_type)
+
+            elif self.current_state == TState.S_READ_MAP_KEY_TYPE:
+                read_data = self.read(1)
+                if not read_data:
+                    break
+                self.latest_result = unpack_i8(read_data)
+                self.current_state = TState.S_READ_MAP_VALUE_TYPE
+
+            elif self.current_state == TState.S_READ_MAP_VALUE_TYPE:
+                read_data = self.read(1)
+                if not read_data:
+                    break
+                self.latest_result = self.latest_result, unpack_i8(read_data)
+                self.current_state = TState.S_READ_MAP_SIZE
+
+            elif self.current_state == TState.S_READ_MAP_SIZE:
+                read_data = self.read(4)
+                if not read_data:
+                    break
+                size = unpack_i32(read_data)
+                sk_type, sv_type = self.latest_result
+                spec = self._process_stack[-1][3][1]
+                if isinstance(spec[0], int):
+                    k_type = spec[0]
+                    k_spec = None
+                else:
+                    k_type, k_spec = spec[0]
+
+                if isinstance(spec[1], int):
+                    v_type = spec[1]
+                    v_spec = None
+                else:
+                    v_type, v_spec = spec[1]
+
+                if sk_type != k_type or sv_type != v_type:
+                    self.error_code = TError.SKIP_ERROR
+                else:
+                    self._process_stack.append((TState.S_READ_MAP_KEY_TYPE, [],
+                                                size, (None, k_spec, k_type, v_spec, v_type)))
+                    self.next_state(k_type)
 
             elif self.current_state == TState.S_PARSE_DONE:
                 break

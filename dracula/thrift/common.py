@@ -70,7 +70,6 @@ class TError(object):
     BAD_VERSION = 2
     NO_PROTOCOL = 3
 
-    INVALID_FIELD_ID = 4
-    INVALID_FIELD_TYPE = 5
+    SKIP_ERROR = 4
 
-    UNKNOWN_METHOD = 6
+    UNKNOWN_METHOD = 20
