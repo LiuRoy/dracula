@@ -39,7 +39,7 @@ class Server(object):
             self.socket, pyev.EV_READ, self.loop, self.on_request)
         accept_watcher.start()
 
-        stop_watcher = pyev.Signal(signal.SIGTERM, self.loop, self.on_stop)
+        stop_watcher = pyev.Signal(signal.SIGINT, self.loop, self.on_stop)
         stop_watcher.start()
 
         self.loop.start()
