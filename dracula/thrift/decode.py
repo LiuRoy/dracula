@@ -119,6 +119,51 @@ class Decoder(object):
         else:
             self.error_code = TError.INTERNAL_ERROR
 
+    def pop_stack(self):
+        """回溯处理站"""
+        result = None
+        while True:
+            top = self._process_stack[-1]
+            if top[0] == TState.S_READ_LIST_TYPE:
+                if top[2] <= 0:
+                    self._process_stack.pop()
+                    result = top[1]
+                elif result is not None:
+                    top[1].append(result)
+                    break
+            elif top[0] == TState.S_READ_MAP_KEY_TYPE:
+                if top[2] <= 0:
+                    self._process_stack.pop()
+                    result = dict(top[1])
+                elif result is not None:
+                    if not top[1]:
+                        top[1].append((result, None))
+                    else:
+                        key, val = top[1][-1]
+                        if key is None:
+                            top[1][-1][0] = result
+                        elif val is None:
+                            top[1][-1][1] = result
+                    break
+            else:
+                if result is not None:
+                    f_name = top[3][0]
+                    setattr(top[1], f_name, result)
+                break
+
+    def get_type_spec(self):
+        """根据栈顶信息找到要处理的type和spec信息"""
+        top = self._process_stack[-1]
+        if top[0] in (TState.S_READ_LIST_TYPE,
+                      TState.S_READ_FIELD_TYPE):
+            return top[3][1], top[3][2]
+
+        if top[1]:
+            if top[1][1] is None:
+                return top[3][1], top[3][2]
+            return top[3][3], top[3][4]
+        return top[3][1], top[3][2]
+
     def parse(self, data):
         """解析二级制数据
 
@@ -228,26 +273,29 @@ class Decoder(object):
                         self.error_code = TError.SKIP_ERROR
                     else:
                         self._process_stack[-1][3] = (
-                            f_name, f_container_spec, f_type)
+                            f_name, f_container_spec(), f_type)
                         self.next_state(f_type)
 
             elif self.current_state == TState.S_READ_BASIC:
-                _, _, f_type = self._process_stack[-1][3]
+                _, f_type = self.get_type_spec()
                 read_data = self.read_basic(f_type)
                 if not read_data:
                     break
                 stack_top = self._process_stack[-1][0]
                 if stack_top == TState.S_READ_LIST_TYPE:
-                    pass
+                    stack_top[2] -= 1
+                    stack_top[1].append(read_data)
+                    self.pop_stack()
                 elif stack_top == TState.S_READ_MAP_KEY_TYPE:
-                    pass
-
-                # todo 回溯处理栈
-                back_result = None
-
-                setattr(self._process_stack[-1][1],
-                        self._process_stack[-1][3][2],
-                        back_result)
+                    stack_top[2] -= 1
+                    if stack_top[1][-1][1] is None:
+                        stack_top[1][-1][1] = read_data
+                    else:
+                        stack_top[1].append((read_data, None))
+                    self.pop_stack()
+                else:
+                    f_name = stack_top[3][0]
+                    setattr(stack_top[1], f_name, result)
                 self.current_state = self._process_stack[1][0]
 
             elif self.current_state == TState.S_READ_STRING_SIZE:
@@ -268,7 +316,22 @@ class Decoder(object):
                     except UnicodeDecodeError:
                         pass
 
-                # todo 参考TState.S_READ_BASIC
+                stack_top = self._process_stack[-1][0]
+                if stack_top == TState.S_READ_LIST_TYPE:
+                    stack_top[2] -= 1
+                    stack_top[1].append(read_data)
+                    self.pop_stack()
+                elif stack_top == TState.S_READ_MAP_KEY_TYPE:
+                    stack_top[2] -= 1
+                    if stack_top[1][-1][1] is None:
+                        stack_top[1][-1][1] = read_data
+                    else:
+                        stack_top[1].append((read_data, None))
+                    self.pop_stack()
+                else:
+                    f_name = stack_top[3][0]
+                    setattr(stack_top[1], f_name, result)
+                self.current_state = self._process_stack[1][0]
 
             elif self.current_state == TState.S_READ_LIST_TYPE:
                 read_data = self.read(1)
@@ -282,7 +345,7 @@ class Decoder(object):
                 if not read_data:
                     break
                 r_type, size = self.latest_result, unpack_i32(read_data)
-                spec = self._process_stack[-1][3][1]
+                spec, _ = self.get_type_spec()
                 if isinstance(spec, tuple):
                     v_type, v_spec = spec[0], spec[1]
                 else:
@@ -315,7 +378,7 @@ class Decoder(object):
                     break
                 size = unpack_i32(read_data)
                 sk_type, sv_type = self.latest_result
-                spec = self._process_stack[-1][3][1]
+                spec, _ = self.get_type_spec()
                 if isinstance(spec[0], int):
                     k_type = spec[0]
                     k_spec = None
