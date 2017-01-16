@@ -73,7 +73,6 @@ class Request(object):
             if err.args[0] not in NOT_BLOCKING:
                 self.close_connection()
         else:
-            # todo发送完毕后keep alive
             watcher.stop()
             watcher.set(self.socket, pyev.EV_READ)
             watcher.start()
@@ -85,7 +84,7 @@ class Request(object):
 
     def execute_method(self):
         """执行thrift method"""
-        func = self.decoder.parse_data.method_name
+        func = getattr(self.handler, self.decoder.parse_data.method_name)
         args = self.decoder.parse_data.method_args
         api_args = [args.thrift_spec[k][1] for k in sorted(args.thrift_spec)]
         try:

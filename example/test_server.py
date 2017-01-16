@@ -8,10 +8,13 @@ test_thrift = thriftpy.load("test.thrift", module_name="test_thrift")
 
 
 class Dispatcher(object):
-    def get_md5(self, input_str):
-        m2 = hashlib.md5()
-        m2.update(input_str)
-        return m2.hexdigest()
+    def get_md5(self, input_str, input_struct):
+        # m1 = hashlib.md5()
+        # m1.update(input_str)
+        # return m1.hexdigest()
+        print input_str
+        print input_struct.__dict__
+        return 'aaaaa'
 
 
 if __name__ == '__main__':
