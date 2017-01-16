@@ -5,8 +5,11 @@ struct aaa {
 
 struct bbb {
     1: double b1,
-    2: list<string> b2;
-    3: map<string, aaa> b3;
+    2: list<string> b2,
+    3: map< string, aaa > b3,
+    4: list<aaa> b4,
+    5: map<string, list<aaa> > b5,
+    6: list< list<aaa> > b6,
 }
 
 

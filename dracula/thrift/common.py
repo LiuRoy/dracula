@@ -54,13 +54,13 @@ class TState(object):
     S_READ_STRING = 20           # 读取字符串
     S_READ_LIST_TYPE = 21        # 读取list类型
     S_READ_LIST_SIZE = 22        # 读取list长度
-    S_READ_MAP_KEY_TYPE = 22     # 读取map key类型
-    S_READ_MAP_VALUE_TYPE = 23   # 读取map value类型
-    S_READ_MAP_SIZE = 24         # 读取map长度
-    S_READ_FIELD_TYPE = 25       # 读取field类型
-    S_READ_FIELD_ID = 26         # 读取field id
+    S_READ_MAP_KEY_TYPE = 23     # 读取map key类型
+    S_READ_MAP_VALUE_TYPE = 24   # 读取map value类型
+    S_READ_MAP_SIZE = 25         # 读取map长度
+    S_READ_FIELD_TYPE = 26       # 读取field类型
+    S_READ_FIELD_ID = 27         # 读取field id
 
-    S_PARSE_DONE = 27            # 解析完成
+    S_PARSE_DONE = 28            # 解析完成
 
 
 class TError(object):
