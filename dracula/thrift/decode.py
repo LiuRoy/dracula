@@ -233,7 +233,7 @@ class Decoder(object):
                                                 -1, None))
 
             elif self.current_state == TState.S_READ_FIELD_TYPE:
-                read_data = self.read(4)
+                read_data = self.read(1)
                 if not read_data:
                     break
                 self.latest_result = unpack_i8(read_data)
@@ -265,8 +265,11 @@ class Decoder(object):
                     if sf_type != f_type:
                         self.error_code = TError.SKIP_ERROR
                     else:
-                        self._process_stack[-1][3] = (
-                            f_name, f_container_spec(), f_type)
+                        #todo 根据f_container_spec重新插入栈
+                        stack_top = self._process_stack.pop()
+                        self._process_stack.append((
+                            stack_top[0], stack_top[1], stack_top[2],
+                            (f_name, f_container_spec, f_type)))
                         self.next_state(f_type)
 
             elif self.current_state == TState.S_READ_BASIC:
@@ -309,12 +312,12 @@ class Decoder(object):
                     except UnicodeDecodeError:
                         pass
 
-                stack_top = self._process_stack[-1][0]
-                if stack_top == TState.S_READ_LIST_TYPE:
+                stack_top = self._process_stack[-1]
+                if stack_top[0] == TState.S_READ_LIST_TYPE:
                     stack_top[2] -= 1
                     stack_top[1].append(read_data)
                     self.pop_stack()
-                elif stack_top == TState.S_READ_MAP_KEY_TYPE:
+                elif stack_top[0] == TState.S_READ_MAP_KEY_TYPE:
                     stack_top[2] -= 1
                     if stack_top[1][-1][1] is None:
                         stack_top[1][-1][1] = read_data
@@ -323,8 +326,8 @@ class Decoder(object):
                     self.pop_stack()
                 else:
                     f_name = stack_top[3][0]
-                    setattr(stack_top[1], f_name, result)
-                self.current_state = self._process_stack[1][0]
+                    setattr(stack_top[1], f_name, read_data)
+                self.current_state = self._process_stack[-1][0]
 
             elif self.current_state == TState.S_READ_LIST_TYPE:
                 read_data = self.read(1)

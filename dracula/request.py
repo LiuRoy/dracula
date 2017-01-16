@@ -12,6 +12,7 @@ from .thrift import (
     TError,
     Decoder,
     Encoder,
+    TMessageType,
 )
 
 
@@ -28,6 +29,7 @@ class Request(object):
             self.socket, pyev.EV_READ, self.loop, self.handle)
         self.decoder = Decoder(service, handler)
         self.read_state = None
+        self.encoder = None
 
     def handle(self, watcher, revents):
         if revents & pyev.EV_READ:
@@ -45,19 +47,18 @@ class Request(object):
             else:
                 self.read_state = ReadState.aborted
         else:
-            # result = self.decoder.parse(buf)
-            # if self.decoder.error_code != TError.NO_ERROR:
-            #     self.read_state = ReadState.done
-            # elif result is None:
-            #     self.read_state = ReadState.not_done
-            # else:
-            #     self.read_state = ReadState.done
-            #     # todo 调用thrift生成结果
-            self.read_state = ReadState.done
+            result = self.decoder.parse(buf)
+            if self.decoder.error_code != TError.NO_ERROR:
+                self.read_state = ReadState.done
+            elif result is None:
+                self.read_state = ReadState.not_done
+            else:
+                self.read_state = ReadState.done
+                self.execute_method()
 
         if self.read_state == ReadState.aborted:
-            # todo 发送具体结果
-            self.close_connection()
+            # todo 发送异常
+            pass
         elif self.read_state == ReadState.done:
             watcher.stop()
             watcher.set(self.socket, pyev.EV_WRITE)
@@ -65,9 +66,9 @@ class Request(object):
 
     def on_write(self, watcher, revents):
         """写入数据"""
-        #todo 写入thrift数据
+        encoder = Encoder(self.decoder.parse_data)
         try:
-            sent = self.socket.send('aaaaa\n')
+            sent = self.socket.send(encoder.encode_obj(TMessageType.REPLY))
         except socket.error as err:
             if err.args[0] not in NOT_BLOCKING:
                 self.close_connection()
@@ -81,3 +82,16 @@ class Request(object):
         """关闭socket"""
         self.loop.stop(pyev.EVBREAK_ALL)
         self.socket.close()
+
+    def execute_method(self):
+        """执行thrift method"""
+        func = self.decoder.parse_data.method_name
+        args = self.decoder.parse_data.method_args
+        api_args = [args.thrift_spec[k][1] for k in sorted(args.thrift_spec)]
+        try:
+            self.decoder.parse_data.method_result.success = \
+                func(*(args.__dict__[k] for k in api_args))
+        except Exception as e:
+            # raise if api don't have throws
+            # todo 处理异常
+            pass

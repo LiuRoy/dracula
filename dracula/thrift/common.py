@@ -80,3 +80,4 @@ class ParseData(object):
     method_name = None
     method_args = None
     method_result = None
+    method_exception = None

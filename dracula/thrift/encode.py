@@ -34,8 +34,7 @@ def pack_string(string):
 
 class Encoder(object):
     """thrift编码"""
-    def __init__(self, obj, parse_data, strict=True):
-        self.obj = obj
+    def __init__(self, parse_data, strict=True):
         self.parse_data = parse_data
         self.strict = strict
         self.buf = StringIO()
@@ -54,7 +53,10 @@ class Encoder(object):
             self.buf.write(pack_i8(ttype))
 
         self.buf.write(pack_i32(self.parse_data.sequence_id))
-        self.encode_val(TType.STRUCT, self.obj)
+        self.encode_val(TType.STRUCT, self.parse_data.method_result)
+
+        self.buf.seek(0)
+        return self.buf.read()
 
     def encode_field_begin(self, ttype, fid):
         self.buf.write(pack_i8(ttype) + pack_i16(fid))
