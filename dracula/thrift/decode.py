@@ -408,7 +408,6 @@ class Decoder(object):
                     self._process_stack.append([TState.S_READ_LIST_TYPE, [],
                                                 size, (None, v_spec, v_type)])
                     if size <= 0:
-                        import ipdb; ipdb.set_trace()
                         self.pop_stack()
                         self.current_state = self._process_stack[-1][0]
                     else:
