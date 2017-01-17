@@ -34,26 +34,26 @@ def pack_string(string):
 
 class Encoder(object):
     """thrift编码"""
-    def __init__(self, parse_data, strict=True):
-        self.parse_data = parse_data
+    def __init__(self, strict=True):
         self.strict = strict
         self.buf = StringIO()
 
-    def encode_obj(self, ttype):
+    def encode_obj(self, parse_data, ttype):
         """编码数据
         
         Args:
+            parse_data (obj)
             ttype (int): 编码数据类型
         """
         if self.strict:
             self.buf.write(pack_i32(VERSION_1 | ttype))
-            self.buf.write(pack_string(self.parse_data.method_name.encode('utf-8')))
+            self.buf.write(pack_string(parse_data.method_name.encode('utf-8')))
         else:
-            self.buf.write(pack_string(self.parse_data.method_name.encode('utf-8')))
+            self.buf.write(pack_string(parse_data.method_name.encode('utf-8')))
             self.buf.write(pack_i8(ttype))
 
-        self.buf.write(pack_i32(self.parse_data.sequence_id))
-        self.encode_val(TType.STRUCT, self.parse_data.method_result)
+        self.buf.write(pack_i32(parse_data.sequence_id))
+        self.encode_val(TType.STRUCT, parse_data.method_result)
 
         self.buf.seek(0)
         return self.buf.read()

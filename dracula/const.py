@@ -2,7 +2,7 @@
 """常数定义"""
 import errno
 
-LISTEN_BACKLOG = 1024
+LISTEN_BACKLOG = 128
 
 READ_BUFFER_SIZE = 4 * 1024
 

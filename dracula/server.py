@@ -4,42 +4,128 @@ import socket
 import logging
 
 import pyev
-from .request import Request
+from .const import (
+    READ_BUFFER_SIZE,
+    NOT_BLOCKING,
+    ReadState,
+)
+from .thrift import (
+    TError,
+    Decoder,
+    Encoder,
+    TMessageType,
+)
 
 logging.basicConfig(level=logging.ERROR)
 
 
-class Server(object):
-    """server"""
-    def __init__(self, socket, service, handler):
-        self.socket = socket
+class ThreadInfo(object):
+    """线程信息"""
+    def __init__(self, service, handler):
         self.service = service
         self.handler = handler
-        self.loop = pyev.default_loop()
+        self.io_watcher = None
 
-    def on_request(self, watcher, revents):
-        """处理请求"""
-        try:
-            client_socket, address = self.socket.accept()
-        except socket.error as err:
-            logging.error('error accepting a connection')
+
+class Request(object):
+    """request"""
+    def __init__(self):
+        self.io_watcher = None
+        self.decoder = None
+        self.read_state = None
+        self.encoder = None
+
+
+def server_run(socket, service, handler):
+    """运行thrift server"""
+    thread_info = ThreadInfo(service, handler)
+    main_loop = pyev.Loop(0, data=thread_info)
+
+    thread_info.io_watcher = pyev.Io(
+        socket, pyev.EV_READ, main_loop, on_request)
+    thread_info.io_watcher.start()
+
+    stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop)
+    stop_watcher.start()
+
+    main_loop.start()
+
+
+def on_request(watcher, revents):
+    try:
+        # todo 根据watcher.fd生成sock
+        client_socket, address = sock.accept()
+    except socket.error as err:
+        logging.error('error accepting a connection')
+    else:
+        client_socket.setblocking(False)
+        request = Request()
+        request.io_watcher = pyev.Io(
+            client_socket, pyev.EV_READ, watcher.loop, on_read, data=request)
+        request.io_watcher.start()
+
+
+def on_stop(watcher, revents):
+    watcher.loop.stop(pyev.EVBREAK_ALL)
+
+
+def on_read(watcher, revents):
+    """读取数据"""
+    request = watcher.data
+    try:
+        # todo 根据watcher.fd生成sock
+        buf = socket.recv(READ_BUFFER_SIZE)
+    except socket.error as err:
+        if err.args[0] in NOT_BLOCKING:
+            request.read_state = ReadState.not_done
         else:
-            client_socket.setblocking(False)
-            request = Request(client_socket, address,
-                              self.service, self.handler, self.loop)
-            request.io_watcher.start()
+            request.read_state = ReadState.aborted
+    else:
+        result = request.decoder.parse(buf)
+        if request.decoder.error_code != TError.NO_ERROR:
+            request.read_state = ReadState.done
+        elif result is None:
+            request.read_state = ReadState.not_done
+        else:
+            request.read_state = ReadState.done
+            self.execute_method()
 
-    def on_stop(self, watcher, revents):
-        """处理STOP信号"""
-        self.loop.stop(pyev.EVBREAK_ALL)
+    if request.read_state == ReadState.aborted:
+        # todo 发送异常
+        pass
+    elif request.read_state == ReadState.done:
         watcher.stop()
+        watcher.set(watcher.fd, pyev.EV_WRITE)
+        watcher.callback = on_write
+        watcher.start()
 
-    def start(self):
-        accept_watcher = pyev.Io(
-            self.socket, pyev.EV_READ, self.loop, self.on_request)
-        accept_watcher.start()
 
-        stop_watcher = pyev.Signal(signal.SIGINT, self.loop, self.on_stop)
-        stop_watcher.start()
+def on_write(watcher, revents):
+    """写入数据"""
+    request = watcher.data
+    request.encoder = Encoder()
+    try:
+        socket.send(request.encoder.encode_obj(
+            request.decoder.parse_data, TMessageType.REPLY))
+    except socket.error as err:
+        if err.args[0] not in NOT_BLOCKING:
+            socket.close()
+    else:
+        watcher.stop()
+        watcher.set(watcher.fd, pyev.EV_READ)
+        watcher.start()
+        request.decoder = Decoder()
 
-        self.loop.start()
+
+def execute_method():
+    """执行thrift method"""
+    func = getattr(self.handler, self.decoder.parse_data.method_name)
+    args = self.decoder.parse_data.method_args
+    api_args = [args.thrift_spec[k][1] for k in sorted(args.thrift_spec)]
+    try:
+        self.decoder.parse_data.method_result.success = \
+            func(*(args.__dict__[k] for k in api_args))
+    except Exception as e:
+        # raise if api don't have throws
+        # todo 处理异常
+        pass

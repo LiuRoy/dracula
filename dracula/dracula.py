@@ -2,7 +2,7 @@
 """thrift server"""
 import os
 import socket
-from .server import Server
+from .server import server_run
 from .const import LISTEN_BACKLOG
 
 
@@ -44,8 +44,7 @@ class ThriftServer(object):
     def serve(self):
         """启动服务"""
         try:
-            server = Server(self.sock, self.service, self.handler)
-            server.start()
+            server_run(self.sock, self.service, self.handler)
         finally:
             if self.sock.family == socket.AF_UNIX:
                 filename = self.sock.getsockname()
