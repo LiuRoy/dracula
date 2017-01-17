@@ -68,7 +68,7 @@ class Request(object):
         """写入数据"""
         encoder = Encoder(self.decoder.parse_data)
         try:
-            sent = self.socket.send(encoder.encode_obj(TMessageType.REPLY))
+            self.socket.send(encoder.encode_obj(TMessageType.REPLY))
         except socket.error as err:
             if err.args[0] not in NOT_BLOCKING:
                 self.close_connection()
