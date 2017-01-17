@@ -74,7 +74,9 @@ class Request(object):
                 self.close_connection()
         else:
             watcher.stop()
-            self.socket.close()
+            watcher.set(self.socket, pyev.EV_READ)
+            watcher.start()
+            self.decoder = Decoder(self.service, self.handler)
 
     def close_connection(self):
         """关闭socket"""

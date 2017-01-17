@@ -6,7 +6,7 @@ import logging
 import pyev
 from .request import Request
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.ERROR)
 
 
 class Server(object):

@@ -1,3 +1,3 @@
 service HashService {
-  string md5(1:string input_str);
+  string md_five(1:string input_str);
 }
