@@ -41,9 +41,9 @@ def server_run(socket, service, handler):
     thread_info = ThreadInfo(service, handler)
     main_loop = pyev.Loop(0, data=thread_info)
 
-    thread_info.io_watcher = pyev.Io(
-        socket, pyev.EV_READ, main_loop, on_request)
-    thread_info.io_watcher.start()
+    io_watcher = pyev.Io(
+        socket.fileno(), pyev.EV_READ, main_loop, on_request)
+    io_watcher.start()
 
     stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop)
     stop_watcher.start()
@@ -88,7 +88,7 @@ def on_read(watcher, revents):
             request.read_state = ReadState.not_done
         else:
             request.read_state = ReadState.done
-            self.execute_method()
+            execute_method(request, watcher.loop.data.handler)
 
     if request.read_state == ReadState.aborted:
         # todo 发送异常
@@ -114,16 +114,17 @@ def on_write(watcher, revents):
         watcher.stop()
         watcher.set(watcher.fd, pyev.EV_READ)
         watcher.start()
-        request.decoder = Decoder()
+        thread_data = watcher.loop.data
+        request.decoder = Decoder(thread_data.service, thread_data.handler)
 
 
-def execute_method():
+def execute_method(request, handler):
     """执行thrift method"""
-    func = getattr(self.handler, self.decoder.parse_data.method_name)
-    args = self.decoder.parse_data.method_args
+    func = getattr(handler, request.decoder.parse_data.method_name)
+    args = request.decoder.parse_data.method_args
     api_args = [args.thrift_spec[k][1] for k in sorted(args.thrift_spec)]
     try:
-        self.decoder.parse_data.method_result.success = \
+        request.decoder.parse_data.method_result.success = \
             func(*(args.__dict__[k] for k in api_args))
     except Exception as e:
         # raise if api don't have throws
