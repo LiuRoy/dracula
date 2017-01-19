@@ -21,7 +21,8 @@ logging.basicConfig(level=logging.ERROR)
 
 class ThreadInfo(object):
     """线程信息"""
-    def __init__(self, service, handler):
+    def __init__(self, socket, service, handler):
+        self.socket = socket
         self.service = service
         self.handler = handler
         self.io_watcher = None
@@ -29,20 +30,21 @@ class ThreadInfo(object):
 
 class Request(object):
     """request"""
-    def __init__(self):
+    def __init__(self, socket, service, handler):
+        self.socket = socket
         self.io_watcher = None
-        self.decoder = None
+        self.decoder = Decoder(service, handler)
         self.read_state = None
         self.encoder = None
 
 
 def server_run(socket, service, handler):
     """运行thrift server"""
-    thread_info = ThreadInfo(service, handler)
+    thread_info = ThreadInfo(socket, service, handler)
     main_loop = pyev.Loop(0, data=thread_info)
 
     io_watcher = pyev.Io(
-        socket.fileno(), pyev.EV_READ, main_loop, on_request)
+        socket, pyev.EV_READ, main_loop, on_request)
     io_watcher.start()
 
     stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop)
@@ -52,14 +54,15 @@ def server_run(socket, service, handler):
 
 
 def on_request(watcher, revents):
+    thread_data = watcher.loop.data
+    sock = thread_data.socket
     try:
-        # todo 根据watcher.fd生成sock
         client_socket, address = sock.accept()
     except socket.error as err:
         logging.error('error accepting a connection')
     else:
         client_socket.setblocking(False)
-        request = Request()
+        request = Request(client_socket, thread_data.service, thread_data.handler)
         request.io_watcher = pyev.Io(
             client_socket, pyev.EV_READ, watcher.loop, on_read, data=request)
         request.io_watcher.start()
@@ -73,8 +76,8 @@ def on_read(watcher, revents):
     """读取数据"""
     request = watcher.data
     try:
-        # todo 根据watcher.fd生成sock
-        buf = socket.recv(READ_BUFFER_SIZE)
+        sock = request.socket
+        buf = sock.recv(READ_BUFFER_SIZE)
     except socket.error as err:
         if err.args[0] in NOT_BLOCKING:
             request.read_state = ReadState.not_done
@@ -104,18 +107,22 @@ def on_write(watcher, revents):
     """写入数据"""
     request = watcher.data
     request.encoder = Encoder()
+    sock = request.socket
     try:
-        socket.send(request.encoder.encode_obj(
+        sock.send(request.encoder.encode_obj(
             request.decoder.parse_data, TMessageType.REPLY))
     except socket.error as err:
         if err.args[0] not in NOT_BLOCKING:
-            socket.close()
+            sock.close()
+    except:
+        sock.close()
+        watcher.stop()
     else:
         watcher.stop()
         watcher.set(watcher.fd, pyev.EV_READ)
-        watcher.start()
         thread_data = watcher.loop.data
         request.decoder = Decoder(thread_data.service, thread_data.handler)
+        watcher.start()
 
 
 def execute_method(request, handler):

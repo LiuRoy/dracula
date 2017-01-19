@@ -14,6 +14,12 @@ from locust import (
     TaskSet,
 )
 
+# from thriftpy.rpc import make_client
+# hash_thrift = thriftpy.load("hash.thrift", module_name="hash_thrift")
+# client = make_client(hash_thrift.HashService, '127.0.0.1', 6001)
+# print client.md_five('aaaaaa')
+
+
 
 class ThriftClient(TClient):
 
