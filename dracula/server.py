@@ -75,8 +75,8 @@ def on_stop(watcher, revents):
 def on_read(watcher, revents):
     """读取数据"""
     request = watcher.data
+    sock = request.socket
     try:
-        sock = request.socket
         buf = sock.recv(READ_BUFFER_SIZE)
     except socket.error as err:
         if err.args[0] in NOT_BLOCKING:
@@ -98,7 +98,7 @@ def on_read(watcher, revents):
         pass
     elif request.read_state == ReadState.done:
         watcher.stop()
-        watcher.set(watcher.fd, pyev.EV_WRITE)
+        watcher.set(sock, pyev.EV_WRITE)
         watcher.callback = on_write
         watcher.start()
 
@@ -114,12 +114,10 @@ def on_write(watcher, revents):
     except socket.error as err:
         if err.args[0] not in NOT_BLOCKING:
             sock.close()
-    except:
-        sock.close()
-        watcher.stop()
     else:
         watcher.stop()
-        watcher.set(watcher.fd, pyev.EV_READ)
+        watcher.set(sock, pyev.EV_READ)
+        watcher.callback = on_read
         thread_data = watcher.loop.data
         request.decoder = Decoder(thread_data.service, thread_data.handler)
         watcher.start()
