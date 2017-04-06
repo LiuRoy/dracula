@@ -19,12 +19,12 @@ class SocketClient(TSocket):
                 result = self.read(len(name))
             except Exception as e:
                 total_time = int((time.time() - start_time) * 1000)
-                events.request_failure.fire(request_type="socket", name=name,
+                events.request_failure.fire(request_type="sock", name=name,
                                             response_time=total_time,
                                             exception=e)
             else:
                 total_time = int((time.time() - start_time) * 1000)
-                events.request_success.fire(request_type="socket", name=name,
+                events.request_success.fire(request_type="sock", name=name,
                                             response_time=total_time,
                                             response_length=0)
                 return result

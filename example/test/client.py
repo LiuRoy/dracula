@@ -12,3 +12,5 @@ if __name__ == '__main__':
                            b5={'string': [test_thrift.aaa(a1=1, a2='1')]},
                            b6=[[test_thrift.aaa(a1=1, a2='1')]])
     print client.test('a' * 10000, args)
+    client.close()
+

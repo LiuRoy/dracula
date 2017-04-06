@@ -1,4 +1,6 @@
 # -*- coding=utf8 -*-
+"""libev接收请求"""
+import errno
 import signal
 import socket
 import logging
@@ -6,7 +8,6 @@ import logging
 import pyev
 from .const import (
     READ_BUFFER_SIZE,
-    NOT_BLOCKING,
     ReadState,
 )
 from .thrift import (
@@ -16,35 +17,34 @@ from .thrift import (
     TMessageType,
 )
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 
 class ThreadInfo(object):
     """线程信息"""
-    def __init__(self, socket, service, handler):
-        self.socket = socket
+    def __init__(self, sock, service, handler):
+        self.sock = sock
         self.service = service
         self.handler = handler
         self.io_watcher = None
 
 
 class Request(object):
-    """request"""
-    def __init__(self, socket, service, handler):
-        self.socket = socket
+    """单个请求"""
+    def __init__(self, sock, service, handler):
+        self.sock = sock
         self.io_watcher = None
         self.decoder = Decoder(service, handler)
         self.read_state = None
         self.encoder = None
 
 
-def server_run(socket, service, handler):
+def server_run(sock, service, handler):
     """运行thrift server"""
-    thread_info = ThreadInfo(socket, service, handler)
+    thread_info = ThreadInfo(sock, service, handler)
     main_loop = pyev.Loop(0, data=thread_info)
 
-    io_watcher = pyev.Io(
-        socket, pyev.EV_READ, main_loop, on_request)
+    io_watcher = pyev.Io(sock, pyev.EV_READ, main_loop, on_request)
     io_watcher.start()
 
     stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop)
@@ -55,14 +55,15 @@ def server_run(socket, service, handler):
 
 def on_request(watcher, revents):
     thread_data = watcher.loop.data
-    sock = thread_data.socket
+    sock = thread_data.sock
     try:
         client_socket, address = sock.accept()
     except socket.error as err:
-        logging.error('error accepting a connection')
+        logging.error('error accepting a connection: {}'.format(err))
     else:
         client_socket.setblocking(False)
-        request = Request(client_socket, thread_data.service, thread_data.handler)
+        request = Request(
+            client_socket, thread_data.service, thread_data.handler)
         request.io_watcher = pyev.Io(
             client_socket, pyev.EV_READ, watcher.loop, on_read, data=request)
         request.io_watcher.start()
@@ -75,23 +76,27 @@ def on_stop(watcher, revents):
 def on_read(watcher, revents):
     """读取数据"""
     request = watcher.data
-    sock = request.socket
+    sock = request.sock
     try:
         buf = sock.recv(READ_BUFFER_SIZE)
     except socket.error as err:
-        if err.args[0] in NOT_BLOCKING:
+        if err.errno == errno.EWOULDBLOCK:
             request.read_state = ReadState.not_done
         else:
             request.read_state = ReadState.aborted
     else:
-        result = request.decoder.parse(buf)
-        if request.decoder.error_code != TError.NO_ERROR:
+        if not buf:
+            # 客户端写完毕
             request.read_state = ReadState.done
-        elif result is None:
-            request.read_state = ReadState.not_done
         else:
-            request.read_state = ReadState.done
-            execute_method(request, watcher.loop.data.handler)
+            result = request.decoder.parse(buf)
+            if request.decoder.error_code != TError.NO_ERROR:
+                request.read_state = ReadState.done
+            elif result is None:
+                request.read_state = ReadState.not_done
+            else:
+                request.read_state = ReadState.done
+                execute_method(request, watcher.loop.data.handler)
 
     if request.read_state == ReadState.aborted:
         # todo 发送异常
@@ -107,20 +112,16 @@ def on_write(watcher, revents):
     """写入数据"""
     request = watcher.data
     request.encoder = Encoder()
-    sock = request.socket
+    sock = request.sock
     try:
         sock.send(request.encoder.encode_obj(
             request.decoder.parse_data, TMessageType.REPLY))
     except socket.error as err:
-        if err.args[0] not in NOT_BLOCKING:
-            sock.close()
+        logging.error('error writing: {}'.format(err))
+        sock.close()
     else:
+        sock.shutdown(socket.SHUT_WR)
         watcher.stop()
-        watcher.set(sock, pyev.EV_READ)
-        watcher.callback = on_read
-        thread_data = watcher.loop.data
-        request.decoder = Decoder(thread_data.service, thread_data.handler)
-        watcher.start()
 
 
 def execute_method(request, handler):

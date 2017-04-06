@@ -20,7 +20,6 @@ from locust import (
 # print client.md_five('aaaaaa')
 
 
-
 class ThriftClient(TClient):
 
     def __getattr__(self, name):
