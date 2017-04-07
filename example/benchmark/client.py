@@ -1,5 +1,6 @@
 # -*- coding=utf8 -*-
 import time
+import resource
 import thriftpy
 from thriftpy.protocol import TBinaryProtocolFactory
 from thriftpy.thrift import TClient
@@ -14,10 +15,8 @@ from locust import (
     TaskSet,
 )
 
-# from thriftpy.rpc import make_client
-# hash_thrift = thriftpy.load("hash.thrift", module_name="hash_thrift")
-# client = make_client(hash_thrift.HashService, '127.0.0.1', 6001)
-# print client.md_five('aaaaaa')
+# 避免客户端出现too many open files错误
+resource.setrlimit(resource.RLIMIT_NOFILE, (4096, 4096))
 
 
 class ThriftClient(TClient):
@@ -47,7 +46,7 @@ class ThriftClient(TClient):
 class ThriftLocust(Locust):
     def __init__(self):
         super(ThriftLocust, self).__init__()
-        socket = TSocket('127.0.0.1', 6001)
+        socket = TSocket('127.0.0.1', 9999)
         proto_factory = TBinaryProtocolFactory()
         trans_factory = TBufferedTransportFactory()
         transport = trans_factory.get_transport(socket)
@@ -64,4 +63,4 @@ class ApiUser(ThriftLocust):
     class task_set(TaskSet):
         @task(10)
         def short(self):
-            self.client.md_five('aaaaa')
+            self.client.md_five('abcd' * 100000)

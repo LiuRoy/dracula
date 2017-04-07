@@ -13,5 +13,6 @@ class Dispatcher(object):
         return m1.hexdigest()
 
 if __name__ == '__main__':
-    server = make_server(hash_thrift.HashService, Dispatcher(), '127.0.0.1', 6001)
+    server = make_server(hash_thrift.HashService, Dispatcher(),
+                         '127.0.0.1', 9999)
     server.serve()

@@ -1,4 +1,5 @@
 # -*- coding=utf8 -*-
+import time
 import thriftpy
 from thriftpy.rpc import make_client
 
@@ -12,5 +13,6 @@ if __name__ == '__main__':
                            b5={'string': [test_thrift.aaa(a1=1, a2='1')]},
                            b6=[[test_thrift.aaa(a1=1, a2='1')]])
     print client.test('a' * 10000, args)
-    client.close()
+    print client.test('a' * 100, args)
 
+    time.sleep(1000)

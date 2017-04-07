@@ -17,7 +17,10 @@ from .thrift import (
     TMessageType,
 )
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.ERROR)
+
+# python的垃圾回收机制可能会把socket都回收掉, 放在全局变量中避免此情况
+all_requests = {}
 
 
 class ThreadInfo(object):
@@ -31,12 +34,13 @@ class ThreadInfo(object):
 
 class Request(object):
     """单个请求"""
-    def __init__(self, sock, service, handler):
+    def __init__(self, sock, service, handler, address):
         self.sock = sock
         self.io_watcher = None
         self.decoder = Decoder(service, handler)
         self.read_state = None
         self.encoder = None
+        self.address = address
 
 
 def server_run(sock, service, handler):
@@ -47,7 +51,7 @@ def server_run(sock, service, handler):
     io_watcher = pyev.Io(sock, pyev.EV_READ, main_loop, on_request)
     io_watcher.start()
 
-    stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop)
+    stop_watcher = pyev.Signal(signal.SIGINT, main_loop, on_stop, priority=5)
     stop_watcher.start()
 
     main_loop.start()
@@ -58,19 +62,28 @@ def on_request(watcher, revents):
     sock = thread_data.sock
     try:
         client_socket, address = sock.accept()
+        logging.info("accept address: {}".format(address))
     except socket.error as err:
         logging.error('error accepting a connection: {}'.format(err))
     else:
         client_socket.setblocking(False)
         request = Request(
-            client_socket, thread_data.service, thread_data.handler)
+            client_socket, thread_data.service, thread_data.handler, address)
         request.io_watcher = pyev.Io(
-            client_socket, pyev.EV_READ, watcher.loop, on_read, data=request)
+            client_socket, pyev.EV_READ, watcher.loop, on_read,
+            data=request)
         request.io_watcher.start()
+        all_requests[address] = request
 
 
 def on_stop(watcher, revents):
+    thread_data = watcher.loop.data
+    listen_sock = thread_data.sock
+
     watcher.loop.stop(pyev.EVBREAK_ALL)
+    listen_sock.close()
+    for _, request in all_requests.iteritems():
+        request.sock.close()
 
 
 def on_read(watcher, revents):
@@ -79,6 +92,7 @@ def on_read(watcher, revents):
     sock = request.sock
     try:
         buf = sock.recv(READ_BUFFER_SIZE)
+        logging.info("from {} receive size {}".format(request.address, len(buf)))
     except socket.error as err:
         if err.errno == errno.EWOULDBLOCK:
             request.read_state = ReadState.not_done
@@ -86,8 +100,10 @@ def on_read(watcher, revents):
             request.read_state = ReadState.aborted
     else:
         if not buf:
-            # 客户端写完毕
-            request.read_state = ReadState.done
+            logging.info("close socket: {}".format(request.address))
+            sock.close()
+            watcher.stop()
+            all_requests.pop(request.address)
         else:
             result = request.decoder.parse(buf)
             if request.decoder.error_code != TError.NO_ERROR:
@@ -116,12 +132,21 @@ def on_write(watcher, revents):
     try:
         sock.send(request.encoder.encode_obj(
             request.decoder.parse_data, TMessageType.REPLY))
+        logging.info("write socket: {} finish".format(request.address))
     except socket.error as err:
-        logging.error('error writing: {}'.format(err))
+        logging.exception(err)
+        logging.info("close socket: {}".format(request.address))
         sock.close()
-    else:
-        sock.shutdown(socket.SHUT_WR)
         watcher.stop()
+        all_requests.pop(request.address)
+    else:
+        watcher.stop()
+        watcher.set(sock, pyev.EV_READ)
+        watcher.callback = on_read
+        thread_data = watcher.loop.data
+        request.decoder = Decoder(thread_data.service, thread_data.handler)
+        request.read_state = None
+        watcher.start()
 
 
 def execute_method(request, handler):
